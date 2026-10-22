@@ -42,8 +42,6 @@ check_greater_than:
 	mov rbp, 0xFFFF0000FFFF0000   ; (111111111111111100000000000000001...)
 	call setup_bitwise_operations
 	
-	                              ; First part of setup_bitwise_operations
-	                              ; as we only need to calculate r12
 	mov rax, r12                  ; Set rax for next call
 	mov rbx, r13                  ; Set rbx for next call
 	mov rbp, 0xFFFFFFFF00000000   ; Mask (111111111111111111111111111111110...)
