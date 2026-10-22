@@ -54,13 +54,14 @@ check_greater_than:
 ; in:       r12 = x, r13 = y, rcx = shift, rbp = mask
 ; clobbers: rax, rbx, rdx, r15, + rsi
 setup_bitwise_operations:
-	mov rax, r12            ; Set rax for next call
-	mov rbx, r13            ; Set rbx for next call
 	mov r15, rbp            ; Copy the mask
 	ror r15, rcx            ; Shift with wrapping
+
+	mov rax, r12            ; Set rax for next call
+	mov rbx, r13            ; Set rbx for next call
 	call bitwise_operations ; Bitwise operations
 	mov rdx, rax            ; Save the value for later
-	
+
 	                        ; Same operations but swap r12 and r13
 	mov rax, r13
 	mov rbx, r12
