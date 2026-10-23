@@ -7,89 +7,74 @@ section .text
 	global _start
 
 _start:
-	movabs rax, 76665343    ; Set number for checking
-	movabs rbx, 76575434    ; Set number to check against
-	call check_greater_than ; Run function
+	mov rax, 76665343    ; x
+	mov rbx, 76575434    ; y
+	movq xmm0, rax       ; Copy rax into low lane
+	pinsrq xmm0, rbx, 1  ; Copy rbx into high lane
+	call is_greater_than ; x > y
 
-	call print_uint         ; Print rax from unsigned integer
+	call print_uint      ; Print rax from unsigned integer
 
-	mov rax, 1              ; System call for exit
-	xor ebx, ebx            ; Clear ebx
+	mov rax, 1           ; System call for exit
+	xor ebx, ebx         ; Clear ebx
 	int 80h
 
 
-; in:       rax = x, rbx = y
+
+; in:       xmm0 = [y, x]
 ; out:      rax = result
-; clobbers: rcx, rbp, r12, r13, + rdx, rsi, r15 
-check_greater_than:
-	mov r12, rax                  ; Need rax later
-	andn r12, rbx, r12            ; Flip rbx and mask r12 with it
+; clobbers: rcx, xmm1, xmm2, mm3, xmm4, xmm5
+is_greater_than:
+	mov ecx, 1               ; Shift amount for bitwise operations
 
-	andn r13, rax, r13            ; Flip saved rax and mask r13 with it
+	movdqa xmm1, xmm0        ; xmm1 = xmm0
+	pshufd xmm1, xmm1, 78    ; Swap lanes
+	pandn xmm1, xmm0         ; xmm1 = !xmm1 & xmm0
 
-	mov rcx, 1                    ; Shift amount for bitwise operations
+%macro round 1
+	mov rax, %1              ; Set rax to input for macro
+	movq xmm4, rax           ; Copy rax into low lane
+	punpcklqdq xmm4, xmm4    ; Copy low lane into high lane
+	call bitwise_operations  ; Run function
+%endmacro
 
-	mov rbp, 0xAAAAAAAAAAAAAAAA   ; Set mask (101010101010101010101010101010101...)
-	call setup_bitwise_operations ; Bitwise operations across r12 and r13
+	round 0xAAAAAAAAAAAAAAAA ; (101010101010101010101010101010101...)
+	round 0xCCCCCCCCCCCCCCCC ; (110011001100110011001100110011001...)
+	round 0xF0F0F0F0F0F0F0F0 ; (111100001111000011110000111100001...)
+	round 0xFF00FF00FF00FF00 ; (111111110000000011111111000000001...)
+	round 0xFFFF0000FFFF0000 ; (111111111111111100000000000000001...)
+	round 0xFFFFFFFF00000000 ; (111111111111111111111111111111110...)
 
-	mov rbp, 0xCCCCCCCCCCCCCCCC   ; (110011001100110011001100110011001...)
-	call setup_bitwise_operations
+	movq rax, xmm1           ; Set rax to low lane of xmm1
+	and al, 1                ; Set 0-flag if 0
+	ret                      ; Return final result as rax
 
-	mov rbp, 0xF0F0F0F0F0F0F0F0   ; (111100001111000011110000111100001...)
-	call setup_bitwise_operations
-	
-	mov rbp, 0xFF00FF00FF00FF00   ; (111111110000000011111111000000001...)
-	call setup_bitwise_operations
-
-	mov rbp, 0xFFFF0000FFFF0000   ; (111111111111111100000000000000001...)
-	call setup_bitwise_operations
-	
-	mov rax, r12                  ; Set rax for next call
-	mov rbx, r13                  ; Set rbx for next call
-	mov rbp, 0xFFFFFFFF00000000   ; Mask (111111111111111111111111111111110...)
-	call bitwise_operations
-
-	ret                           ; Return final result as rax
-
-; in:       r12 = x, r13 = y, rcx = shift, rbp = mask
-; clobbers: rax, rbx, rdx, r15, + rsi
-setup_bitwise_operations:
-	mov r15, rbp            ; Copy the mask
-	ror r15, rcx            ; Shift with wrapping
-
-	mov rax, r12            ; Set rax for next call
-	mov rbx, r13            ; Set rbx for next call
-	call bitwise_operations ; Bitwise operations
-	mov rdx, rax            ; Save the value for later
-
-	                        ; Same operations but swap r12 and r13
-	mov rax, r13
-	mov rbx, r12
-	call bitwise_operations ; Reuses the shifted mask in r15
-	mov r13, rax
-
-	mov r12, rdx            ; Grab the saved value
-	shl rcx, 1              ; Double the shift amount for next time
-
-	ret                     ; Returns nothing
-
-; in:       rax = x, rbx = y, rcx = shift, rbp = mask, r15 = inv mask
-; out:      rax = result
-; clobbers: rsi
+; in:       xmm1 = [x | y], xmm4 = [mask | mask], rcx = shift
+; out:      xmm1 = result, xmm2 = result, rcx (doubled)
+; clobbers: xmm0, xmm3, xmm5
 bitwise_operations:
-	mov rsi, rax ; Save rax for later
-	and rsi, rbp ; & mask
-	shr rsi, rcx ; Shift without wrap
-	or rax, rsi  ; | mask with the saved rax
+	movq xmm3, rcx        ; Copy rcx into low lane
 
-	and rax, r15 ; & mask with the shifted mask
+	movdqa xmm2, xmm1     ; xmm2 = xmm1
+	pshufd xmm2, xmm2, 78 ; Swap lanes
 
-	and rbx, rbp ; & mask
-	shr rbx, rcx ; Shift without wrap
-	not rbx      ; Flip bits
-	and rax, rbx ; & mask
+	movdqa xmm0, xmm1     ; xmm0 = xmm1
+	pand xmm1, xmm4       ; xmm1 = xmm1 & xmm4
+	psrlq xmm1, xmm3      ; xmm1 >> xmm3
+	por xmm0, xmm1        ; xmm0 = xmm0 | xmm1
 
-	ret          ; Return rax
+	movdqa xmm5, xmm4     ; xmm5 = xmm4
+	pandn xmm5, xmm0      ; xmm5 = !xmm5 & xmm0
+
+	pand xmm2, xmm4       ; xmm2 = xmm2 & xmm4
+	psrlq xmm2, xmm3      ; xmm2 >> xmm3
+	pandn xmm2, xmm5      ; xmm2 = !xmm2 & xmm5
+	
+	movdqa xmm1, xmm2     ; xmm1 = xmm2
+
+	shl rcx, 1            ; Double the shift amount
+
+	ret                   ; Returns nothing
 
 
 
