@@ -1,5 +1,7 @@
+default rel
+
 section .bss
-	buf resb 12
+	buf resb 21
 
 section .text
 	global _start
@@ -92,25 +94,33 @@ bitwise_operations:
 
 
 ; print_uint WAS WRITTEN BY CLAUDE
-; prints the unsigned number in eax, followed by a newline
+; in:       rax = unsigned number
+; out:      nothing (prints number and newline)
+; clobbers: rax, rbx, rcx, rdx, rsi, rdi, r8, r11
 print_uint:
-	mov rdi, buf+11         ; point at the last byte of the buffer
-	mov byte [edi], 10      ; newline goes at the end
-	mov rbx, 10             ; divisor
+    lea rdi, [buf+20]
+    mov byte [rdi], 10
+    mov r8, 0xCCCCCCCCCCCCCCCD   ; magic constant, loaded once outside the loop
+    mov rsi, rax                 ; rsi = current value
 
 .next_digit:
-	xor edx, edx            ; div uses edx:eax, so clear the top half
-	div rbx                 ; eax = eax / 10, edx = eax % 10
-	add dl, '0'             ; digit -> ASCII character
-	dec rdi
-	mov [rdi], dl           ; store it, moving backwards
-	test rax, rax           ; quotient zero yet?
-	jnz .next_digit
-
-	mov rax, 4              ; sys_write
-	mov rbx, 1              ; stdout
-	mov rcx, rdi            ; start of the digits
-	mov rdx, buf+12
-	sub rdx, rcx            ; length = end - start
-	int 80h
-	ret
+    mov rax, rsi
+    mul r8                       ; rdx:rax = rsi * magic
+    shr rdx, 3                   ; rdx = rsi / 10
+    lea rax, [rdx + rdx*4]
+    add rax, rax                 ; rax = (rsi / 10) * 10
+    sub rsi, rax                 ; rsi = remainder (the digit)
+    add sil, '0'
+    dec rdi
+    mov [rdi], sil               ; store the digit character
+    mov rsi, rdx                 ; value = quotient
+    test rsi, rsi
+    jnz .next_digit
+    
+    mov rsi, rdi            ; address of the first digit
+    lea rdx, [buf+21]
+    sub rdx, rsi            ; length including the newline
+    mov edi, 1              ; stdout (rdi is free now that rsi has the address)
+    mov eax, 1              ; sys_write (64-bit number)
+    syscall                 ; clobbers rcx and r11
+    ret
